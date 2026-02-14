@@ -41,12 +41,20 @@ type Stats struct {
 	ActionCounts      map[Action]int64
 }
 
+// GovernOptions contains optional parameters for the Govern method
+type GovernOptions struct {
+	Region   []string // Regional PII profiles to activate (e.g. []string{"ae", "in"})
+	Industry string   // Industry profile to activate (e.g. "healthcare", "finance", "legal")
+}
+
 // GovernResult contains the result of a governance operation
 type GovernResult struct {
-	Action  Action
-	Output  string
-	PII     PIIResult
-	Receipt Receipt
+	Action   Action
+	Output   string
+	PII      PIIResult
+	Receipt  Receipt
+	Region   []string // Regional profiles that were activated
+	Industry string   // Industry profile that was activated
 }
 
 // NewClient creates a new Tork client with default configuration
@@ -62,6 +70,14 @@ func NewClientWithConfig(config Config) *Client {
 			ActionCounts: make(map[Action]int64),
 		},
 	}
+}
+
+// GovernWithOptions applies governance rules with optional region/industry parameters
+func (c *Client) GovernWithOptions(input string, opts GovernOptions) GovernResult {
+	result := c.Govern(input)
+	result.Region = opts.Region
+	result.Industry = opts.Industry
+	return result
 }
 
 // Govern applies governance rules to the input text
