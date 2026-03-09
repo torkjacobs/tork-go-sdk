@@ -41,20 +41,33 @@ type Stats struct {
 	ActionCounts      map[Action]int64
 }
 
+// SessionContext holds optional agent/session context for multi-agent governance tracking.
+//
+// All fields are pointers to indicate optionality. When provided, these fields
+// are included in the POST body to /api/v1/govern and returned in the receipt.
+type SessionContext struct {
+	AgentID    *string `json:"agent_id,omitempty"`    // Identifier for the agent making the call
+	AgentRole  *string `json:"agent_role,omitempty"`  // Role of the agent: "planner", "worker", or "judge"
+	SessionID  *string `json:"session_id,omitempty"`  // Groups all calls from the same agent session
+	SessionTurn *int   `json:"session_turn,omitempty"` // Position in the conversation (1, 2, 3...)
+}
+
 // GovernOptions contains optional parameters for the Govern method
 type GovernOptions struct {
-	Region   []string // Regional PII profiles to activate (e.g. []string{"ae", "in"})
-	Industry string   // Industry profile to activate (e.g. "healthcare", "finance", "legal")
+	Region         []string        // Regional PII profiles to activate (e.g. []string{"ae", "in"})
+	Industry       string          // Industry profile to activate (e.g. "healthcare", "finance", "legal")
+	SessionContext *SessionContext  // Optional agent/session context
 }
 
 // GovernResult contains the result of a governance operation
 type GovernResult struct {
-	Action   Action
-	Output   string
-	PII      PIIResult
-	Receipt  Receipt
-	Region   []string // Regional profiles that were activated
-	Industry string   // Industry profile that was activated
+	Action         Action
+	Output         string
+	PII            PIIResult
+	Receipt        Receipt
+	Region         []string        // Regional profiles that were activated
+	Industry       string          // Industry profile that was activated
+	SessionContext *SessionContext  `json:"session_context,omitempty"` // Agent/session context when provided
 }
 
 // NewClient creates a new Tork client with default configuration
@@ -72,11 +85,15 @@ func NewClientWithConfig(config Config) *Client {
 	}
 }
 
-// GovernWithOptions applies governance rules with optional region/industry parameters
+// GovernWithOptions applies governance rules with optional region/industry/session parameters
 func (c *Client) GovernWithOptions(input string, opts GovernOptions) GovernResult {
 	result := c.Govern(input)
 	result.Region = opts.Region
 	result.Industry = opts.Industry
+	if opts.SessionContext != nil {
+		result.SessionContext = opts.SessionContext
+		result.Receipt.SessionContext = opts.SessionContext
+	}
 	return result
 }
 

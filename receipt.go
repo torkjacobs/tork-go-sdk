@@ -21,15 +21,16 @@ const (
 
 // Receipt represents a cryptographic governance receipt
 type Receipt struct {
-	ID              string    `json:"id"`
-	Timestamp       time.Time `json:"timestamp"`
-	InputHash       string    `json:"input_hash"`
-	OutputHash      string    `json:"output_hash"`
-	Action          Action    `json:"action"`
-	PIITypes        []PIIType `json:"pii_types"`
-	PIICount        int       `json:"pii_count"`
-	PolicyVersion   string    `json:"policy_version"`
-	ProcessingTimeNs int64    `json:"processing_time_ns"`
+	ID               string          `json:"id"`
+	Timestamp        time.Time       `json:"timestamp"`
+	InputHash        string          `json:"input_hash"`
+	OutputHash       string          `json:"output_hash"`
+	Action           Action          `json:"action"`
+	PIITypes         []PIIType       `json:"pii_types"`
+	PIICount         int             `json:"pii_count"`
+	PolicyVersion    string          `json:"policy_version"`
+	ProcessingTimeNs int64           `json:"processing_time_ns"`
+	SessionContext   *SessionContext `json:"session_context,omitempty"` // Agent/session context when provided
 }
 
 // GenerateReceiptID creates a unique receipt ID
