@@ -110,11 +110,7 @@ func (c *Client) Govern(input string) GovernResult {
 
 	if pii.HasPII {
 		action = c.config.DefaultAction
-		if action == ActionRedact {
-			output = pii.RedactedText
-		} else {
-			output = input
-		}
+		output = pii.RedactedText
 	} else {
 		action = ActionAllow
 		output = input

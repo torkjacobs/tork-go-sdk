@@ -146,9 +146,9 @@ func TestGovern_DenyAction(t *testing.T) {
 	if result.Action != ActionDeny {
 		t.Errorf("Expected Action ActionDeny, got %s", result.Action)
 	}
-	// When action is deny, output should not be redacted
-	if result.Output != "SSN: 123-45-6789" {
-		t.Errorf("Expected original output with deny action, got '%s'", result.Output)
+	// Output must always be redacted when PII is present, regardless of action
+	if result.Output != "SSN: [SSN_REDACTED]" {
+		t.Errorf("Expected redacted output with deny action, got '%s'", result.Output)
 	}
 }
 

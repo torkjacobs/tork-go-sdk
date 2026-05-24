@@ -97,7 +97,7 @@ func DetectPIIWithPatterns(text string, patterns []PIIPattern) PIIResult {
 		for _, loc := range found {
 			match := PIIMatch{
 				Type:       p.Type,
-				Value:      text[loc[0]:loc[1]],
+				Value:      "[REDACTED]",
 				StartIndex: loc[0],
 				EndIndex:   loc[1],
 			}
