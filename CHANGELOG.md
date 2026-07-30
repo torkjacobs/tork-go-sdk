@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.2.0 - 2026-07-30
 
 ### Fixed
 - fix: make `Client` safe for concurrent use. `Govern` updated the shared
@@ -28,7 +28,23 @@
 No public API changes: method signatures, exported fields and behaviour are
 unchanged.
 
-## v1.2.0 - 2026-03-09
+## Unreleased
+
+_Nothing yet._
+
+---
+
+_Note: entries below were committed but never tagged, and therefore never
+published. They ship for the first time in v0.2.0 above. The heading previously
+read "v1.2.0", a release that never existed — no tag beyond v0.1.0 has ever been
+pushed to this repository._
+
+## Untagged (2026-02 to 2026-05, shipped in v0.2.0)
 
 ### Added
 - feat: agent/session context fields (agent_id, agent_role, session_id, session_turn)
+- feat: region and industry parameters for PII v1.1
+- feat: Gorilla and Beego middleware adapters
+
+### Security
+- security: never expose raw PII in governance output or match value on DENY/ESCALATE
