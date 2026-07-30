@@ -14,6 +14,16 @@
   client's live `ActionCounts` map, so a caller could mutate internal state, and
   merely ranging over the result while another goroutine called `Govern` was
   itself a fatal `concurrent map iteration and map write`.
+- fix: guard the client configuration with the same mutex. `Govern` read
+  `config` while `SetConfig`, `SetDefaultAction` and `SetPolicyVersion` wrote
+  it. `Action` and `PolicyVersion` are strings, and a string header (data
+  pointer plus length) is not written atomically, so a concurrent reader could
+  observe the pointer of one value with the length of another and read past the
+  end of the backing array — producing governance actions and receipt policy
+  versions that were never configured (observed: `"redactwo"`, `"denytest"`,
+  `"escala"`). `Govern` now takes one configuration snapshot per call, so a
+  single call can no longer mix fields from two different configurations.
+  Reconfiguring a live client while it serves traffic is now supported.
 
 No public API changes: method signatures, exported fields and behaviour are
 unchanged.

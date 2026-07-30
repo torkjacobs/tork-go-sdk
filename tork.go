@@ -31,19 +31,29 @@ func DefaultConfig() Config {
 // Client is the main Tork governance client.
 //
 // A Client is safe for concurrent use by multiple goroutines: Govern,
-// GovernWithOptions, GetStats and ResetStats may be called from HTTP handlers
-// or a goroutine pool without external locking. This is how the middleware
-// adapters in this module use it — one shared Client across every request.
+// GovernWithOptions, GetStats, ResetStats, GetConfig and the three setters may
+// be called from HTTP handlers or a goroutine pool without external locking.
+// This is how the middleware adapters in this module use it — one shared Client
+// across every request. Reconfiguring a live Client while it serves traffic is
+// supported; in-flight calls complete against either the old or the new
+// configuration, never a mixture of the two.
 //
 // A Client must not be copied after first use — it contains a mutex. Always
 // pass it as *Client; NewClient and NewClientWithConfig return one.
 type Client struct {
+	// mu guards both config and stats.
+	//
+	// One mutex covers both because no code path holds one while touching the
+	// other: Govern snapshots the config and releases the lock before it takes
+	// it again to record statistics. A second mutex would buy nothing —
+	// configuration is written rarely — and would introduce a lock ordering to
+	// get wrong.
+	//
+	// It is held only for the snapshot or update itself, never across PII
+	// detection or receipt generation.
+	mu     sync.Mutex
 	config Config
-
-	// mu guards stats. It is held only for the statistics update or snapshot
-	// itself, never across PII detection or receipt generation.
-	mu    sync.Mutex
-	stats Stats
+	stats  Stats
 }
 
 // Stats holds usage statistics
@@ -114,6 +124,13 @@ func (c *Client) GovernWithOptions(input string, opts GovernOptions) GovernResul
 func (c *Client) Govern(input string) GovernResult {
 	start := time.Now()
 
+	// Take one configuration snapshot up front and use it for the whole call.
+	// Re-reading c.config at each point of use would let a concurrent setter
+	// land in between, so a single call could choose an action under the old
+	// configuration and then stamp the new policy version onto the receipt
+	// describing that decision.
+	cfg := c.snapshotConfig()
+
 	// Detect PII
 	pii := DetectPII(input)
 
@@ -122,7 +139,7 @@ func (c *Client) Govern(input string) GovernResult {
 	var output string
 
 	if pii.HasPII {
-		action = c.config.DefaultAction
+		action = cfg.DefaultAction
 		output = pii.RedactedText
 	} else {
 		action = ActionAllow
@@ -138,7 +155,7 @@ func (c *Client) Govern(input string) GovernResult {
 		action,
 		pii.Types,
 		pii.Count,
-		c.config.PolicyVersion,
+		cfg.PolicyVersion,
 		processingTimeNs,
 	)
 
@@ -204,22 +221,54 @@ func (c *Client) ResetStats() {
 	}
 }
 
-// GetConfig returns the current configuration
-func (c *Client) GetConfig() Config {
+// snapshotConfig copies the configuration under the lock.
+//
+// Callers get a value that is stable for as long as they need it, so the lock
+// is never held across the actual governance work.
+func (c *Client) snapshotConfig() Config {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	return c.config
 }
 
-// SetConfig updates the configuration
+// GetConfig returns a snapshot of the current configuration.
+//
+// The returned Config shares nothing with the client: every field is a value
+// type, so a copy is already a deep copy and the caller may mutate it freely.
+// If a reference-typed field is ever added to Config — a []string of regions, a
+// map, a pointer — this must copy it explicitly, the way GetStats copies
+// ActionCounts, or callers will be handed a live view of SDK internals.
+func (c *Client) GetConfig() Config {
+	return c.snapshotConfig()
+}
+
+// SetConfig updates the configuration.
+//
+// Safe to call while other goroutines are calling Govern.
 func (c *Client) SetConfig(config Config) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	c.config = config
 }
 
-// SetDefaultAction updates the default action
+// SetDefaultAction updates the default action.
+//
+// Safe to call while other goroutines are calling Govern.
 func (c *Client) SetDefaultAction(action Action) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	c.config.DefaultAction = action
 }
 
-// SetPolicyVersion updates the policy version
+// SetPolicyVersion updates the policy version.
+//
+// Safe to call while other goroutines are calling Govern.
 func (c *Client) SetPolicyVersion(version string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	c.config.PolicyVersion = version
 }

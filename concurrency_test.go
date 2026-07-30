@@ -260,6 +260,214 @@ func TestGetStatsReturnsIndependentCopy(t *testing.T) {
 	}
 }
 
+// ============================================================================
+// Configuration races
+// ============================================================================
+
+// TestConcurrentGovernAndSetters races the three configuration setters against
+// Govern. c.config is plain struct fields rather than a map, so this cannot
+// abort the process the way ActionCounts did; the race detector is what makes
+// the bug visible, hence the emphasis on running this suite with -race.
+//
+// The assertion is on the observed values, not just on staying alive: every
+// action Govern chooses must be one that was actually configured at some point,
+// and every policy version stamped into a receipt must be one that was actually
+// set. A read torn between two configurations would surface here as a value
+// that was never written.
+func TestConcurrentGovernAndSetters(t *testing.T) {
+	client := NewClient()
+
+	actions := []Action{ActionRedact, ActionDeny, ActionEscalate}
+	versions := []string{"1.0.0", "2.0.0", "3.0.0"}
+
+	validAction := map[Action]bool{}
+	for _, a := range actions {
+		validAction[a] = true
+	}
+	validVersion := map[string]bool{}
+	for _, v := range versions {
+		validVersion[v] = true
+	}
+
+	var writers, readers sync.WaitGroup
+	done := make(chan struct{})
+
+	// Writers: churn the configuration through every setter continuously.
+	for w := 0; w < 8; w++ {
+		writers.Add(1)
+		go func(id int) {
+			defer writers.Done()
+			for i := 0; ; i++ {
+				select {
+				case <-done:
+					return
+				default:
+				}
+				switch (id + i) % 3 {
+				case 0:
+					client.SetDefaultAction(actions[i%len(actions)])
+				case 1:
+					client.SetPolicyVersion(versions[i%len(versions)])
+				case 2:
+					client.SetConfig(Config{
+						PolicyVersion: versions[i%len(versions)],
+						DefaultAction: actions[i%len(actions)],
+					})
+				}
+			}
+		}(w)
+	}
+
+	// Readers: Govern and GetConfig concurrently with the churn.
+	for g := 0; g < concurrentGoroutines; g++ {
+		readers.Add(1)
+		go func(id int) {
+			defer readers.Done()
+			for i := 0; i < concurrentIterations; i++ {
+				result := client.Govern("SSN: 123-45-6789")
+
+				if !validAction[result.Action] {
+					t.Errorf("Govern produced action %q, which was never configured", result.Action)
+					return
+				}
+				if !validVersion[result.Receipt.PolicyVersion] {
+					t.Errorf("receipt carries policy version %q, which was never configured",
+						result.Receipt.PolicyVersion)
+					return
+				}
+
+				// The security guarantee holds regardless of which action won
+				// the race: raw PII must never reach the output.
+				if result.Output != "SSN: [SSN_REDACTED]" {
+					t.Errorf("raw PII leaked into output: %q", result.Output)
+					return
+				}
+
+				cfg := client.GetConfig()
+				if !validAction[cfg.DefaultAction] || !validVersion[cfg.PolicyVersion] {
+					t.Errorf("GetConfig returned an unconfigured value: %+v", cfg)
+					return
+				}
+			}
+		}(g)
+	}
+
+	readers.Wait()
+	close(done)
+	writers.Wait()
+}
+
+// TestGovernUsesConsistentConfigSnapshot pins the subtler half of the bug.
+//
+// Govern reads DefaultAction and PolicyVersion at two different points. Locking
+// each read individually would still be wrong: a SetConfig landing between them
+// lets one call pick DefaultAction from the old configuration and PolicyVersion
+// from the new one, producing a receipt describing a decision no configuration
+// ever specified. Govern must therefore snapshot the config once, up front.
+//
+// The setters here only ever move between two self-consistent pairings, so any
+// mismatched (action, version) combination proves a torn read.
+func TestGovernUsesConsistentConfigSnapshot(t *testing.T) {
+	const (
+		versionA = "10.0.0"
+		versionB = "20.0.0"
+	)
+	// Pairings are what must stay together: redact always with versionA,
+	// escalate always with versionB.
+	pairA := Config{PolicyVersion: versionA, DefaultAction: ActionRedact}
+	pairB := Config{PolicyVersion: versionB, DefaultAction: ActionEscalate}
+
+	// Start from pairA rather than NewClient(). The default configuration is a
+	// third, unrelated pairing, and a reader scheduled before the first writer
+	// would legitimately observe it and fail the assertion below.
+	client := NewClientWithConfig(pairA)
+
+	var writers, readers sync.WaitGroup
+	done := make(chan struct{})
+
+	for w := 0; w < 4; w++ {
+		writers.Add(1)
+		go func() {
+			defer writers.Done()
+			for i := 0; ; i++ {
+				select {
+				case <-done:
+					return
+				default:
+				}
+				if i%2 == 0 {
+					client.SetConfig(pairA)
+				} else {
+					client.SetConfig(pairB)
+				}
+			}
+		}()
+	}
+
+	for g := 0; g < concurrentGoroutines; g++ {
+		readers.Add(1)
+		go func() {
+			defer readers.Done()
+			for i := 0; i < concurrentIterations; i++ {
+				result := client.Govern("SSN: 123-45-6789")
+
+				action := result.Action
+				version := result.Receipt.PolicyVersion
+
+				matched := (action == pairA.DefaultAction && version == pairA.PolicyVersion) ||
+					(action == pairB.DefaultAction && version == pairB.PolicyVersion)
+				if !matched {
+					t.Errorf("torn config read: action %q paired with policy version %q, "+
+						"a combination that was never configured", action, version)
+					return
+				}
+			}
+		}()
+	}
+
+	readers.Wait()
+	close(done)
+	writers.Wait()
+}
+
+// TestGetConfigReturnsIndependentCopy is the config-side counterpart to
+// TestGetStatsReturnsIndependentCopy.
+//
+// Config currently holds only value types (a string and a string-based Action),
+// so returning it by value already shares nothing with the client. This test
+// exists to keep that true: if a reference-typed field (a []string of regions,
+// a map, a pointer) is ever added to Config, GetConfig must start deep-copying
+// it the way GetStats copies ActionCounts, and this test is what fails first.
+func TestGetConfigReturnsIndependentCopy(t *testing.T) {
+	client := NewClientWithConfig(Config{
+		PolicyVersion: "7.0.0",
+		DefaultAction: ActionRedact,
+	})
+
+	snapshot := client.GetConfig()
+	snapshot.PolicyVersion = "mutated"
+	snapshot.DefaultAction = ActionDeny
+
+	fresh := client.GetConfig()
+	if fresh.PolicyVersion != "7.0.0" {
+		t.Errorf("caller mutation leaked into client state: PolicyVersion is %q, expected \"7.0.0\"",
+			fresh.PolicyVersion)
+	}
+	if fresh.DefaultAction != ActionRedact {
+		t.Errorf("caller mutation leaked into client state: DefaultAction is %q, expected %q",
+			fresh.DefaultAction, ActionRedact)
+	}
+
+	// The client must still behave according to its own configuration.
+	if got := client.Govern("SSN: 123-45-6789"); got.Action != ActionRedact {
+		t.Errorf("client action changed after caller mutated a GetConfig result: got %q", got.Action)
+	}
+	if got := client.Govern("SSN: 123-45-6789"); got.Receipt.PolicyVersion != "7.0.0" {
+		t.Errorf("client policy version changed after caller mutated a GetConfig result: got %q",
+			got.Receipt.PolicyVersion)
+	}
+}
+
 // BenchmarkGovernSerial and BenchmarkGovernParallel use identical input so
 // the pair measures the cost of the lock: serial is the uncontended baseline,
 // parallel is the same work under maximum contention on one shared Client.
