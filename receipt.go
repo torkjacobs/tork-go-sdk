@@ -31,6 +31,8 @@ type Receipt struct {
 	PolicyVersion    string          `json:"policy_version"`
 	ProcessingTimeNs int64           `json:"processing_time_ns"`
 	SessionContext   *SessionContext `json:"session_context,omitempty"` // Agent/session context when provided
+	// ToolResultScan is set only on receipts produced by Client.ScanToolResult.
+	ToolResultScan *ToolResultScanReceiptBlock `json:"tool_result_scan,omitempty"`
 }
 
 // GenerateReceiptID creates a unique receipt ID

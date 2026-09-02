@@ -1,5 +1,39 @@
 # Changelog
 
+## v0.3.0 - Unreleased
+
+### Added
+- feat: port `ScanToolResult` from `tork-js-sdk` (DECIDED-TACT2-V2-C). Scans
+  a tool result (MCP server output, or any external system the caller
+  doesn't control) for PII and prompt injection before it is appended to
+  model context. Pure, synchronous, on-device — no network call. PII
+  detection reuses the existing `DetectPII` detector; prompt injection uses
+  a new conservative heuristic pattern set (`InjectionRuleset =
+  "tork-injection-heuristics-v1"`, types `instruction_override`,
+  `role_reassignment`, `exfiltration_url`, all findings labelled with a
+  `heuristic:` prefix). `Client.ScanToolResult` records the scan as a
+  `Receipt` carrying a `tool_result_scan` block (`attested_by: "client"`,
+  `capture_mode: "edge"`) that is byte-identical (snake_case keys,
+  alphabetical order, same finding-type vocabulary) to the block produced by
+  `tork-js-sdk`, and maps the outcome to a governance `Action`: blocked →
+  deny, injection finding → escalate, PII-only → redact, clean → allow. This
+  port matches the JS SDK's Tier 1 (10-type basic PII vocabulary); it does
+  not carry the Python SDK's regional/industry pattern tier.
+
+### Fixed
+- fix: `PIIType` declared 7 values but `defaultPatterns` only had a regex
+  for 7 of the JS SDK's 10-type basic PII vocabulary (`pii.ts`
+  `PII_PATTERNS`) — `passport`, `drivers_license` and `bank_account` passed
+  through `DetectPII` (and, transitively, `Govern`) unflagged and
+  unmasked. Found while running the parity check this port required before
+  porting `ScanToolResult`, the same check that caught the equivalent gap
+  in the Python SDK
+  (`tests/test_pii_type_parity.py`,
+  `SDK-PYTHON-PII-DETECTOR-DROPS-THREE-DECLARED-TYPES`). All three patterns
+  are now present, ported verbatim from `tork-js-sdk/src/pii.ts`, appended
+  in the same declaration order as the JS `PII_PATTERNS` object so the
+  chained-replace redaction semantics match byte for byte.
+
 ## v0.2.0 - 2026-07-30
 
 ### Fixed
@@ -27,10 +61,6 @@
 
 No public API changes: method signatures, exported fields and behaviour are
 unchanged.
-
-## Unreleased
-
-_Nothing yet._
 
 ---
 

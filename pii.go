@@ -9,13 +9,16 @@ import (
 type PIIType string
 
 const (
-	PIITypeSSN        PIIType = "ssn"
-	PIITypeCreditCard PIIType = "credit_card"
-	PIITypeEmail      PIIType = "email"
-	PIITypePhone      PIIType = "phone"
-	PIITypeAddress    PIIType = "address"
-	PIITypeIPAddress  PIIType = "ip_address"
-	PIITypeDOB        PIIType = "date_of_birth"
+	PIITypeSSN            PIIType = "ssn"
+	PIITypeCreditCard     PIIType = "credit_card"
+	PIITypeEmail          PIIType = "email"
+	PIITypePhone          PIIType = "phone"
+	PIITypeAddress        PIIType = "address"
+	PIITypeIPAddress      PIIType = "ip_address"
+	PIITypeDOB            PIIType = "date_of_birth"
+	PIITypePassport       PIIType = "passport"
+	PIITypeDriversLicense PIIType = "drivers_license"
+	PIITypeBankAccount    PIIType = "bank_account"
 )
 
 // PIIPattern defines a pattern for detecting PII
@@ -78,6 +81,29 @@ var defaultPatterns = []PIIPattern{
 		Type:      PIITypeDOB,
 		Pattern:   regexp.MustCompile(`\b(?:0[1-9]|1[0-2])/(?:0[1-9]|[12]\d|3[01])/(?:19|20)\d{2}\b`),
 		Redaction: "[DOB_REDACTED]",
+	},
+	// The three patterns below close SDK-GO-PII-DETECTOR-DROPS-THREE-DECLARED-TYPES:
+	// PIIType declared 7 values but only 7 of the JS SDK's 10-type basic PII
+	// vocabulary (pii.ts PII_PATTERNS) had a corresponding pattern here.
+	// passport, drivers_license and bank_account passed through DetectPII
+	// unflagged and unmasked. Ported verbatim from tork-js-sdk/src/pii.ts,
+	// appended in the same order JS declares them so the chained-replace
+	// semantics below (each pattern redacts over the previous pattern's
+	// already-redacted text) match byte for byte.
+	{
+		Type:      PIITypePassport,
+		Pattern:   regexp.MustCompile(`\b[A-Z]{1,2}\d{6,9}\b`),
+		Redaction: "[PASSPORT_REDACTED]",
+	},
+	{
+		Type:      PIITypeDriversLicense,
+		Pattern:   regexp.MustCompile(`\b[A-Z]\d{7,14}\b`),
+		Redaction: "[DL_REDACTED]",
+	},
+	{
+		Type:      PIITypeBankAccount,
+		Pattern:   regexp.MustCompile(`\b\d{8,17}\b`),
+		Redaction: "[ACCOUNT_REDACTED]",
 	},
 }
 
