@@ -2,13 +2,13 @@
 
 On-device AI governance SDK for Go with PII detection, redaction, and cryptographic receipts.
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/torknetwork/tork-go-sdk.svg)](https://pkg.go.dev/github.com/torknetwork/tork-go-sdk)
+[![Go Reference](https://pkg.go.dev/badge/github.com/torkjacobs/tork-go-sdk.svg)](https://pkg.go.dev/github.com/torkjacobs/tork-go-sdk)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Installation
 
 ```bash
-go get github.com/torknetwork/tork-go-sdk
+go get github.com/torkjacobs/tork-go-sdk
 ```
 
 ## Quick Start
@@ -18,7 +18,7 @@ package main
 
 import (
     "fmt"
-    tork "github.com/torknetwork/tork-go-sdk"
+    tork "github.com/torkjacobs/tork-go-sdk"
 )
 
 func main() {
@@ -35,28 +35,55 @@ func main() {
 }
 ```
 
-## Regional PII Detection (v1.1)
+## Country PII detection
 
-Activate country-specific and industry-specific PII patterns:
+23 country profiles, 50 patterns and 20 check digits, generated from Tork's own
+country registry (bundle `1.0.0`) and computed entirely on-device.
+
+Countries: AU, US, GB, EU, AE, SA, NG, IN, JP, CN, KR, BR, CA, ZA, GH, IT, KE,
+MU, MX, MY, PK, SG, TH.
+
+A country's patterns switch on when the text activates that country — the same
+content signals the cloud uses — so ordinary business text is not measured
+against 50 national-identifier patterns it could never contain. On the
+1,159-line business corpus this SDK is tested against, nothing is redacted.
+
+```go
+r := tork.DetectPII("South African ID number 8001015009087 for the FICA check.")
+r.Regions       // ["ZA"]
+r.CountryLabels // ["ZA_ID"]
+r.RedactedText  // "South African ID number [ZA_ID_REDACTED] for the FICA check."
+```
+
+Pass `Region` to force profiles on when you already know the jurisdiction:
 
 ```go
 client := tork.NewClient()
 
-// UAE regional detection — Emirates ID, +971 phone, PO Box
 result := client.GovernWithOptions(
-    "Emirates ID: 784-1234-1234567-1",
-    tork.GovernOptions{Region: []string{"ae"}},
+    "Documento 529.982.247-25 arquivado.",
+    tork.GovernOptions{Region: []string{"br"}},
 )
-
-// Multi-region + industry
-result = client.GovernWithOptions(
-    "Aadhaar: 1234 5678 9012, ICD-10: J45.20",
-    tork.GovernOptions{Region: []string{"in"}, Industry: "healthcare"},
-)
-
-// Available regions: AU, US, GB, EU, AE, SA, NG, IN, JP, CN, KR, BR
-// Available industries: healthcare, finance, legal
+// result.Output == "Documento [CPF_REDACTED] arquivado."
 ```
+
+Three gates keep the false-positive rate down, and all three must pass:
+
+1. **Activation** — one of the country's content signals fires.
+2. **Keyword** — for 18 of the 24 national, tax and health identifiers, one of
+   the identifier's keywords must appear within 60 characters before the match
+   or 40 after.
+3. **Check digit** — for the 10 identifiers whose issuing authority publishes
+   the algorithm, a number of the right shape that fails its check digit is not
+   that country's identifier. Where the algorithm is community-sourced rather
+   than authority-published (`ca_sin`, `emirates_id`, `de_tax_id`, `kr_rrn`,
+   `sa_national_id`) the checksum is advisory and never rejects a match.
+
+Every pattern is asserted to compile under RE2, so nothing in the registry can
+reach this SDK that Go cannot run.
+
+Still cloud-only, and not in this SDK: the near-miss fallback, the slot,
+context, gravity and name layers, industry profiles, and org configuration.
 
 ## Supported Frameworks (4 Adapters)
 
@@ -73,8 +100,8 @@ result = client.GovernWithOptions(
 ```go
 import (
     "github.com/gin-gonic/gin"
-    tork "github.com/torknetwork/tork-go-sdk"
-    "github.com/torknetwork/tork-go-sdk/middleware"
+    tork "github.com/torkjacobs/tork-go-sdk"
+    "github.com/torkjacobs/tork-go-sdk/middleware"
 )
 
 func main() {
@@ -105,8 +132,8 @@ func main() {
 ```go
 import (
     "github.com/labstack/echo/v4"
-    tork "github.com/torknetwork/tork-go-sdk"
-    "github.com/torknetwork/tork-go-sdk/middleware"
+    tork "github.com/torkjacobs/tork-go-sdk"
+    "github.com/torkjacobs/tork-go-sdk/middleware"
 )
 
 func main() {
@@ -133,8 +160,8 @@ func main() {
 ```go
 import (
     "github.com/gofiber/fiber/v2"
-    tork "github.com/torknetwork/tork-go-sdk"
-    "github.com/torknetwork/tork-go-sdk/middleware"
+    tork "github.com/torkjacobs/tork-go-sdk"
+    "github.com/torkjacobs/tork-go-sdk/middleware"
 )
 
 func main() {
@@ -162,8 +189,8 @@ func main() {
 import (
     "net/http"
     "github.com/go-chi/chi/v5"
-    tork "github.com/torknetwork/tork-go-sdk"
-    "github.com/torknetwork/tork-go-sdk/middleware"
+    tork "github.com/torkjacobs/tork-go-sdk"
+    "github.com/torkjacobs/tork-go-sdk/middleware"
 )
 
 func main() {

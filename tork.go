@@ -110,7 +110,10 @@ func NewClientWithConfig(config Config) *Client {
 
 // GovernWithOptions applies governance rules with optional region/industry/session parameters
 func (c *Client) GovernWithOptions(input string, opts GovernOptions) GovernResult {
-	result := c.Govern(input)
+	// opts.Region now drives detection. Until v0.4.0 this method called
+	// Govern(input) and then copied Region and Industry onto the result, so the
+	// option was echoed back to the caller without ever selecting a pattern.
+	result := c.govern(input, opts.Region)
 	result.Region = opts.Region
 	result.Industry = opts.Industry
 	if opts.SessionContext != nil {
@@ -120,8 +123,17 @@ func (c *Client) GovernWithOptions(input string, opts GovernOptions) GovernResul
 	return result
 }
 
-// Govern applies governance rules to the input text
+// Govern applies governance rules to the input text.
+//
+// Country profiles are activated from the content itself. To force a set of
+// profiles on, use GovernWithOptions with GovernOptions.Region.
 func (c *Client) Govern(input string) GovernResult {
+	return c.govern(input, nil)
+}
+
+// govern is the single implementation. regions, when non-empty, replaces
+// content activation for the country layer.
+func (c *Client) govern(input string, regions []string) GovernResult {
 	start := time.Now()
 
 	// Take one configuration snapshot up front and use it for the whole call.
@@ -132,7 +144,7 @@ func (c *Client) Govern(input string) GovernResult {
 	cfg := c.snapshotConfig()
 
 	// Detect PII
-	pii := DetectPII(input)
+	pii := DetectPIIInRegions(input, regions)
 
 	// Determine action and output
 	var action Action

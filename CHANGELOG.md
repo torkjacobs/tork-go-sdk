@@ -1,6 +1,86 @@
 # Changelog
 
-## v0.3.0 - Unreleased
+## v0.4.0 - 2026-09-25
+
+### Added
+- **PII registry bundle 1.2.0 (24 countries, incl. AU TFN/ABN/Medicare).**
+  Patterns, keywords, redaction labels and checksum gates are generated from
+  Tork's own country registry and consumed verbatim from the SDK bundle
+  (`Registry-Version: 1.2.0`, content `cfd4f61ebaf45e74`). Countries: AU, US, GB, EU, AE, SA, NG, IN, JP,
+  CN, KR, BR, CA, ZA, GH, IT, KE, MU, MX, MY, PK, SG, TH, ID. Australia's TFN,
+  ABN and Medicare number are AlwaysOn patterns: they run unconditionally,
+  before any country activates, via `PatternsForRegions`.
+- New exported API, all pure and local: `DetectCountryPII`,
+  `DetectCountryPIIWithPatterns`, `InferRegions`, `PatternsForRegions`,
+  `ApplyRedactions`, `DetectPIIInRegions`, `ChecksumFunctions`, `Patterns`,
+  `Signals`, `RegistryVersion`, `KeywordWindowBefore`, `KeywordWindowAfter`,
+  and the `CountryPIIMatch` / `RedactionSpan` types.
+- `PIIResult` gains `CountryMatches`, `CountryLabels` and `Regions`. Nothing was
+  removed or renamed; `DetectPII`, `DetectPIIWithPatterns`, `RedactPII` and
+  `ContainsPII` keep their signatures. `DetectPIIWithPatterns` deliberately does
+  NOT apply the country layer: a caller supplying its own pattern set is asking
+  for exactly that set.
+- **Nine check digits ported by hand.** The bundle names twenty algorithms and
+  specifies the eleven that reduce to a weight vector and a modulus; the other
+  nine (`br_cpf`, `br_cnpj`, `cn_resident_id`, `de_steuer_id`, `fr_nir`,
+  `it_codice_fiscale`, `jp_my_number`, `kr_rrn`, `sg_nric`) are ported from the
+  cloud's `lib/pii/checksums.ts`, each tested against the issuing authority's
+  own worked example where one is published.
+
+### Fixed
+- **SDK-GO-PARTIAL-REDACTION.** Until v0.3.0 each pattern was redacted with its
+  own `ReplaceAllString` over text a previous pattern had already rewritten,
+  while `Matches` carried indices into the *original* text. Two patterns
+  matching overlapping spans could leave half an identifier standing beside a
+  redaction token -- digits exposed in output the caller had been told was
+  redacted. Matches are now collected against the original text, overlaps are
+  resolved before anything is rewritten, and the surviving spans are spliced
+  right to left in one pass. `TestNoPartialRedaction` asserts the invariant
+  across all 2,092 vectors.
+- **README install path.** The README told readers to
+  `go get github.com/torknetwork/tork-go-sdk`, which does not exist. The module
+  is, and has always been, `github.com/torkjacobs/tork-go-sdk` -- the path in
+  `go.mod` and the one published on proxy.golang.org. Eleven occurrences fixed.
+
+### Notes
+- **The bundle now states the whole contract, and this SDK implements it.**
+  Bundle 1.0.0's README documented three rules; measured against the cloud's
+  golden snapshot they disagreed with it on 14 of 86 country-corpus cases, so
+  this SDK carried two more of its own. Bundle **1.1.0 documents seven**, marks
+  each SDK or cloud-only, and ships the data all seven need in every language
+  file -- the activation signals, the country map, the asymmetric 60/40 window,
+  the symmetric 60 context window, the whole-word vocabulary, the near-miss
+  policy, the table constants and the reference labels. So the locally generated
+  activation layer is **deleted**, no window is hard-coded any more, and rules 6
+  (near miss), 7 (column header) and 7b (nearest label) are implemented here for
+  the first time. Every rule now reads its data off the placed bundle.
+- Advisory checksums never reject a match: `ca_sin`, `emirates_id`,
+  `de_tax_id`, `kr_rrn`, `sa_national_id`. Korea stopped issuing check digits on
+  20 Oct 2020.
+- Every registry pattern is asserted to compile under RE2, which together with
+  Swift's NSRegularExpression bounds the portable subset.
+- Not ported, and still cloud-only: the slot, context,
+  gravity and name layers, industry profiles, and org configuration.
+- **Indonesia is the country 1.1.0 added, and it is the one that proves the
+  whole-word rule.** `id_nik`'s only short spellings -- NIK, KTP, NPWP -- are
+  `wholeWordKeywords`, not ordinary keywords, because `nik` sits inside
+  *teknik*, *elektronik*, *klinik* and *pabrik*. Matching them by substring
+  would open the gate on an Indonesian sales ledger; matching them on a word
+  boundary catches "NIK 3171010101900001" and leaves *teknik* alone. An SDK that
+  merged the two lists would be shipping a false-positive bug, so the boundary
+  test is implemented rather than the shortcut, and four unit cases assert both
+  halves.
+- **FLAGGED, upstream: bundle 1.1.0 cannot detect Australia's TFN, ABN or
+  Medicare number.** `checksums.json` declares `au_tfn` and `au_abn` as
+  `requiredBy` and `au_medicare` as `advisoryFor` patterns of those names, and
+  `patterns` ships none of them -- the AU profile carries only `au_acn` and
+  `au_phone_intl`. The AU activation signals are still keyed on "tfn", "tax
+  file" and "medicare", so the bundle switches Australia on for identifiers it
+  then has no pattern to catch. The cloud detects all three. This is a recall
+  gap no SDK can close from the bundle, and the six parity cases it costs are
+  recorded in the fixture as `BUNDLE GAP` rather than silently accepted.
+
+## v0.3.0 - 2026-09-02
 
 ### Added
 - feat: port `ScanToolResult` from `tork-js-sdk` (DECIDED-TACT2-V2-C). Scans
