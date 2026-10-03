@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.5.0 - 2026-10-03
+
+### Added
+- Tests for the agent telemetry fields `agent_id`, `agent_role`, `session_id`
+  and `session_turn` (integer) on `GovernOptions.SessionContext`: passed through
+  to the receipt when set, omitted from JSON when unset or partially set.
+  README documents them.
+- `pii_parity_test.go`: every declared `PIIType` is asserted to have a live
+  pattern plus a positive and a negative example.
+
+### PII types
+- All 10 declared types kept (ssn, credit_card, email, phone, address,
+  ip_address, date_of_birth, passport, drivers_license, bank_account). None
+  removed; every one has a working pattern.
+
 ## v0.4.0 - 2026-09-25
 
 ### Added

@@ -291,6 +291,27 @@ valid := receipt.Verify(input, output) // true/false
 | Driver's License | A1234567890 | [DL_REDACTED] |
 | Bank Account | 123456789012 | [ACCOUNT_REDACTED] |
 
+## Agent telemetry fields
+
+`GovernWithOptions` accepts optional agent/session context. Every field is a
+pointer: set it and it is passed through to the result and the receipt
+(`session_context`); leave it nil and it is omitted from the JSON.
+
+```go
+agentID, role, sid, turn := "agent-7", "planner", "sess-1", 3
+res := client.GovernWithOptions(input, tork.GovernOptions{
+    SessionContext: &tork.SessionContext{
+        AgentID:     &agentID, // agent_id
+        AgentRole:   &role,    // agent_role
+        SessionID:   &sid,     // session_id
+        SessionTurn: &turn,    // session_turn (integer)
+    },
+})
+```
+
+The ten types above are the full declared set; each has a live pattern and a
+positive and a negative test (`pii_parity_test.go`).
+
 ## Scanning Tool Results
 
 `ScanToolResult` scans a tool result — the output of an MCP server, or any
